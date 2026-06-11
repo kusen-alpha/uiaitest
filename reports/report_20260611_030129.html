@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>UIAI 测试报告 - todo-demo</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; background: #f0f2f5; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 12px; margin-bottom: 20px; }
+        .header h1 { margin: 0 0 10px 0; font-size: 24px; }
+        .header .meta { opacity: 0.9; font-size: 14px; }
+        .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; margin: 20px 0; }
+        .summary-card { padding: 20px; border-radius: 10px; color: white; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .summary-card .number { font-size: 28px; font-weight: bold; }
+        .summary-card .label { font-size: 12px; opacity: 0.9; margin-top: 5px; }
+        .table-container { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #fafafa; padding: 12px; text-align: left; font-weight: 600; border-bottom: 2px solid #eee; font-size: 13px; color: #666; }
+        td { padding: 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; font-size: 13px; }
+        tr:hover { background: #fafbfc; }
+        .status-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>UIAI 测试报告</h1>
+            <div class="meta">todo-demo | 2026-06-11 03:01:29 | uiai v0.1.0</div>
+        </div>
+        <div class="summary">
+            <div class="summary-card" style="background:#2196f3"><div class="number">1</div><div class="label">总计</div></div>
+            <div class="summary-card" style="background:#4caf50"><div class="number">1</div><div class="label">通过</div></div>
+            <div class="summary-card" style="background:#f44336"><div class="number">0</div><div class="label">失败</div></div>
+            <div class="summary-card" style="background:#ff9800"><div class="number">0</div><div class="label">自愈</div></div>
+            <div class="summary-card" style="background:#9e9e9e"><div class="number">0</div><div class="label">跳过</div></div>
+            <div class="summary-card" style="background:#4caf50"><div class="number">100.0%</div><div class="label">通过率</div></div>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead><tr><th>ID</th><th>名称</th><th>状态</th><th>耗时</th><th>详情</th></tr></thead>
+                <tbody>
+            <tr>
+                <td>todo-001</td>
+                <td>TodoMVC - 添加待办事项</td>
+                <td style="color:#4caf50;font-weight:bold">PASSED</td>
+                <td>1474ms</td>
+                <td><div style="margin-left:20px;padding:2px 0;color:#4caf50">passed: 导航到TodoMVC (1400ms)</div><div style="margin-left:20px;padding:2px 0;color:#4caf50">passed: 输入待办事项 (49ms)</div><div style="margin-left:20px;padding:2px 0;color:#4caf50">passed: 按回车确认 (20ms)</div><div style="margin-left:20px;padding:2px 0;color:#4caf50">passed: 验证待办已添加 (5ms)</div></td>
+            </tr></tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

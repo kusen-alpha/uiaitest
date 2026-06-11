@@ -1,0 +1,54 @@
+{
+  "suite_name": "todo-demo",
+  "summary": {
+    "suite_name": "todo-demo",
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "healed": 0,
+    "skipped": 0,
+    "error": 0,
+    "pass_rate": "100.0%",
+    "duration_ms": 1520.42818069458
+  },
+  "results": [
+    {
+      "test_id": "todo-001",
+      "test_name": "TodoMVC - 添加待办事项",
+      "status": "passed",
+      "duration_ms": 1520.42818069458,
+      "error": null,
+      "steps": [
+        {
+          "name": "导航到TodoMVC",
+          "status": "passed",
+          "duration_ms": 1437.2506141662598,
+          "error": null,
+          "healing_applied": null
+        },
+        {
+          "name": "输入待办事项",
+          "status": "passed",
+          "duration_ms": 59.59463119506836,
+          "error": null,
+          "healing_applied": null
+        },
+        {
+          "name": "按回车确认",
+          "status": "passed",
+          "duration_ms": 19.583940505981445,
+          "error": null,
+          "healing_applied": null
+        },
+        {
+          "name": "验证待办已添加",
+          "status": "passed",
+          "duration_ms": 3.998994827270508,
+          "error": null,
+          "healing_applied": null
+        }
+      ],
+      "healing_records": []
+    }
+  ]
+}

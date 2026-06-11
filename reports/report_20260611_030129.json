@@ -1,0 +1,63 @@
+{
+  "suite_name": "todo-demo",
+  "summary": {
+    "suite_name": "todo-demo",
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "healed": 0,
+    "skipped": 0,
+    "error": 0,
+    "pass_rate": "100.0%",
+    "duration_ms": 1474.303960800171
+  },
+  "timestamp": "2026-06-11T03:01:29.347625",
+  "results": [
+    {
+      "test_id": "todo-001",
+      "test_name": "TodoMVC - 添加待办事项",
+      "status": "passed",
+      "duration_ms": 1474.303960800171,
+      "error": null,
+      "traceback": null,
+      "steps": [
+        {
+          "name": "导航到TodoMVC",
+          "status": "passed",
+          "duration_ms": 1400.1495838165283,
+          "error": null,
+          "healing_applied": null,
+          "screenshot_path": null
+        },
+        {
+          "name": "输入待办事项",
+          "status": "passed",
+          "duration_ms": 49.25680160522461,
+          "error": null,
+          "healing_applied": null,
+          "screenshot_path": null
+        },
+        {
+          "name": "按回车确认",
+          "status": "passed",
+          "duration_ms": 19.8972225189209,
+          "error": null,
+          "healing_applied": null,
+          "screenshot_path": null
+        },
+        {
+          "name": "验证待办已添加",
+          "status": "passed",
+          "duration_ms": 5.00035285949707,
+          "error": null,
+          "healing_applied": null,
+          "screenshot_path": null
+        }
+      ],
+      "healing_records": [],
+      "screenshots": [],
+      "trace_path": null,
+      "video_path": null
+    }
+  ]
+}
