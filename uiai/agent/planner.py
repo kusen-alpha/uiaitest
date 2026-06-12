@@ -7,7 +7,7 @@ from typing import Any
 
 from uiai.agent.base import BaseAgent, AgentOutput, AgentRole
 from uiai.agent.llm import BaseLLMClient, LLMMessage
-from uiai.agent.context import ContextManager
+from uiai.core.knowledge import KnowledgeManager
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +65,9 @@ class PlannerAgent(BaseAgent):
     - 上下文窗口控制：在token预算内组装消息
     """
 
-    def __init__(self, llm_client: BaseLLMClient | None = None, context_manager: ContextManager | None = None):
+    def __init__(self, llm_client: BaseLLMClient | None = None, knowledge_manager: KnowledgeManager | None = None):
         super().__init__(name="PlannerAgent", role=AgentRole.PLANNER, llm_client=llm_client)
-        self.context = context_manager or ContextManager()
+        self.knowledge = knowledge_manager or KnowledgeManager()
 
     async def run(self, input_data: Any, **kwargs) -> AgentOutput:
         """生成测试计划"""
@@ -78,25 +78,20 @@ class PlannerAgent(BaseAgent):
         context = kwargs.get("context", "")
         output_dir = Path(kwargs.get("output_dir", "./test_plans"))
 
-        # 记录用户输入
-        self.context.add_turn("user", requirement)
+        # 构建知识上下文
+        knowledge_context = await self.knowledge.build_context(requirement)
 
-        # 构建上下文消息（含RAG）
-        messages_list = self.context.build_context_messages(
-            system_prompt=PLANNER_SYSTEM_PROMPT,
-            user_query=requirement + (f"\n\n额外上下文：\n{context}" if context else ""),
-            include_history=True,
-            include_rag=True,
-        )
+        # 构建用户查询
+        user_query = requirement + (f"\n\n额外上下文：\n{context}" if context else "")
 
-        # 转为LLMMessage格式
-        messages = [LLMMessage(role=m["role"], content=m["content"]) for m in messages_list]
+        # 组装消息
+        messages = [LLMMessage(role="system", content=PLANNER_SYSTEM_PROMPT)]
+        if knowledge_context:
+            messages.append(LLMMessage(role="system", content=knowledge_context))
+        messages.append(LLMMessage(role="user", content=user_query))
 
         try:
             plan_content = await self.llm_client.chat(messages)
-
-            # 记录AI输出
-            self.context.add_turn("assistant", plan_content)
 
             # 保存测试计划
             output_dir.mkdir(parents=True, exist_ok=True)

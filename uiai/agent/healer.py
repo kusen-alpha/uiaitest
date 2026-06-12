@@ -5,7 +5,7 @@ from typing import Any
 
 from uiai.agent.base import BaseAgent, AgentOutput, AgentRole
 from uiai.agent.llm import BaseLLMClient, LLMMessage
-from uiai.agent.context import ContextManager
+from uiai.core.knowledge import KnowledgeManager
 from uiai.core.result import TestResult, TestStatus
 
 logger = logging.getLogger(__name__)
@@ -66,9 +66,9 @@ class HealerAgent(BaseAgent):
     - 对话管理：支持多轮对话细化修复方案
     """
 
-    def __init__(self, llm_client: BaseLLMClient | None = None, context_manager: ContextManager | None = None):
+    def __init__(self, llm_client: BaseLLMClient | None = None, knowledge_manager: KnowledgeManager | None = None):
         super().__init__(name="HealerAgent", role=AgentRole.HEALER, llm_client=llm_client)
-        self.context = context_manager or ContextManager()
+        self.knowledge = knowledge_manager or KnowledgeManager()
 
     async def run(self, input_data: Any, **kwargs) -> AgentOutput:
         """分析失败并生成修复建议"""
@@ -77,18 +77,14 @@ class HealerAgent(BaseAgent):
 
         failure_context = self._build_failure_context(input_data, **kwargs)
 
-        # 记录用户输入
-        self.context.add_turn("user", failure_context[:2000])  # 截断避免过长
+        # 构建知识上下文
+        knowledge_context = await self.knowledge.build_context(failure_context[:2000])
 
-        # 构建上下文消息
-        messages_list = self.context.build_context_messages(
-            system_prompt=HEALER_SYSTEM_PROMPT,
-            user_query=failure_context,
-            include_history=True,
-            include_rag=True,
-        )
-
-        messages = [LLMMessage(role=m["role"], content=m["content"]) for m in messages_list]
+        # 组装消息
+        messages = [LLMMessage(role="system", content=HEALER_SYSTEM_PROMPT)]
+        if knowledge_context:
+            messages.append(LLMMessage(role="system", content=knowledge_context))
+        messages.append(LLMMessage(role="user", content=failure_context))
 
         # 如果有截图，使用多模态
         screenshot = kwargs.get("screenshot")
@@ -99,9 +95,6 @@ class HealerAgent(BaseAgent):
                 healing_suggestion = await self.llm_client.chat(messages)
         else:
             healing_suggestion = await self.llm_client.chat(messages)
-
-        # 记录AI输出
-        self.context.add_turn("assistant", healing_suggestion[:1000])
 
         return AgentOutput(
             role=self.role,

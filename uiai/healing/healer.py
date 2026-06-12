@@ -279,10 +279,31 @@ class HealingManager:
         return False, None
 
     async def _heal_ai_code(self, executor: BaseExecutor, step: TestStep, error: str) -> tuple[bool, dict | None]:
-        """Level 4: AI代码修复（仅生成建议，不自动应用）"""
+        """Level 4: AI代码修复 — 调用HealerAgent生成修复建议，需人工审核"""
         if not self.llm_client:
             return False, None
-        # AI修复不自动应用
+
+        try:
+            from uiai.agent.healer import HealerAgent
+            from uiai.core.result import TestResult, TestStatus
+
+            # 构造失败测试结果供HealerAgent分析
+            failed_result = TestResult(
+                test_id="heal_attempt",
+                test_name=step.name,
+                status=TestStatus.FAILED,
+                error=error,
+            )
+
+            healer = HealerAgent(llm_client=self.llm_client)
+            output = await healer.run(failed_result)
+
+            if output.success and output.data:
+                # AI修复建议不自动应用，返回建议供人工审核
+                return False, {"type": "ai_suggestion", "suggestion": output.data}
+        except Exception as e:
+            logger.debug(f"AI code healing failed: {e}")
+
         return False, None
 
     def _search_a11y_tree(self, tree: dict, target_text: str | None, target_role: str | None) -> list[dict]:

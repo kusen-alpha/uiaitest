@@ -1,5 +1,7 @@
 """Flaky测试检测器 - 识别不稳定的测试用例"""
 from __future__ import annotations
+import asyncio
+import enum
 import json
 import logging
 from collections import defaultdict
@@ -11,6 +13,13 @@ from typing import Any
 from uiai.core.result import TestResult, TestStatus
 
 logger = logging.getLogger(__name__)
+
+
+class FlakyMark(enum.Enum):
+    """Flaky标记等级"""
+    SUSPECTED = "疑似"    # score 0.3-0.5
+    CONFIRMED = "确认"    # score 0.5-0.8
+    SEVERE = "严重"       # score > 0.8
 
 
 @dataclass
@@ -186,3 +195,187 @@ class FlakyDetector:
                 self._records[record.test_id] = record
             except Exception:
                 pass
+
+    # ── FlakyMarking: 三级标记系统 ──────────────────────────────
+
+    def mark_flaky(self, test_id: str) -> FlakyMark | None:
+        """根据 flaky_score 返回标记等级
+
+        Returns:
+            FlakyMark 等级，若测试不存在或数据不足则返回 None
+        """
+        record = self._records.get(test_id)
+        if not record or record.total_runs < self.min_runs:
+            return None
+
+        score = record.flaky_score
+        if score > 0.8:
+            return FlakyMark.SEVERE
+        elif score >= 0.5:
+            return FlakyMark.CONFIRMED
+        elif score >= self.flaky_threshold:
+            return FlakyMark.SUSPECTED
+        return None
+
+    # ── FlakyIsolation: 隔离验证执行 ───────────────────────────
+
+    async def isolate_and_verify(self, test_id: str, executor_factory, test_case,
+                                 repeat: int = 3) -> dict:
+        """在隔离环境中多次运行测试以验证是否为 Flaky
+
+        Args:
+            test_id: 测试标识
+            executor_factory: 可调用对象，返回一个可执行测试的执行器
+            test_case: 测试用例对象
+            repeat: 重复执行次数，默认3次
+
+        Returns:
+            {"test_id": ..., "results": [bool], "pass_rate": float, "is_flaky": bool}
+        """
+        results: list[bool] = []
+
+        for i in range(repeat):
+            try:
+                executor = executor_factory()
+                if asyncio.iscoroutinefunction(executor):
+                    result = await executor(test_case)
+                else:
+                    result = executor(test_case)
+
+                # 判断执行结果是否为通过
+                if isinstance(result, TestResult):
+                    passed = result.status in (TestStatus.PASSED, TestStatus.HEALED)
+                elif isinstance(result, bool):
+                    passed = result
+                else:
+                    passed = bool(result)
+
+                results.append(passed)
+            except Exception:
+                results.append(False)
+
+        pass_rate = sum(results) / len(results) if results else 0.0
+        # 通过率不一致（既非全通过也非全失败）则确认为 Flaky
+        is_flaky = 0.0 < pass_rate < 1.0
+
+        return {
+            "test_id": test_id,
+            "results": results,
+            "pass_rate": round(pass_rate, 3),
+            "is_flaky": is_flaky,
+        }
+
+    # ── RepairSuggestions: 根因分析与修复建议 ───────────────────
+
+    def suggest_repairs(self, test_id: str) -> list[dict]:
+        """分析失败模式并返回修复建议列表
+
+        根据历史记录中的失败模式匹配对应的修复建议类型。
+        """
+        record = self._records.get(test_id)
+        if not record or record.total_runs < self.min_runs:
+            return []
+
+        suggestions: list[dict] = []
+        recent = record.recent_results
+
+        # 交替率高 → 时序问题
+        alternation_count = 0
+        for i in range(1, len(recent)):
+            if recent[i] != recent[i - 1]:
+                alternation_count += 1
+        alternation_rate = alternation_count / max(len(recent) - 1, 1)
+
+        if alternation_rate > 0.5:
+            suggestions.append({
+                "type": "timing",
+                "suggestion": "添加显式等待，元素可能在动态加载",
+            })
+
+        # 自愈率高 → 选择器不稳定
+        if record.total_runs > 0:
+            heal_rate = record.heal_runs / record.total_runs
+            if heal_rate > 0.2:
+                suggestions.append({
+                    "type": "selector",
+                    "suggestion": "选择器可能不稳定，建议使用data-testid",
+                })
+
+        # 失败率高且交替率低 → 外部依赖问题
+        if record.total_runs > 0:
+            fail_rate = record.fail_runs / record.total_runs
+            if fail_rate > 0.4 and alternation_rate <= 0.5:
+                suggestions.append({
+                    "type": "dependency",
+                    "suggestion": "测试可能依赖外部服务，建议添加Mock",
+                })
+
+        # 通过/失败交替但无明显自愈 → 数据不一致
+        if alternation_rate > 0.3 and record.heal_runs == 0 and record.fail_runs > 0:
+            suggestions.append({
+                "type": "data",
+                "suggestion": "测试数据可能不一致，建议使用数据工厂",
+            })
+
+        # 若无特定模式匹配，给出通用建议
+        if not suggestions and record.flaky_score >= self.flaky_threshold:
+            suggestions.append({
+                "type": "general",
+                "suggestion": "测试存在不稳定表现，建议增加重试机制并排查环境因素",
+            })
+
+        return suggestions
+
+    # ── ReviewMechanism: 定期审查 ──────────────────────────────
+
+    def review_flaky_tests(self) -> list[dict]:
+        """审查所有 Flaky 测试，检查是否有测试已趋于稳定
+
+        对于最近5次运行全部通过的测试，建议降级或移除标记。
+
+        Returns:
+            审查条目列表
+        """
+        review_items: list[dict] = []
+
+        for record in self.get_flaky_tests():
+            recent = record.recent_results[-5:]
+            current_mark = self.mark_flaky(record.test_id)
+
+            if not current_mark:
+                continue
+
+            # 最近5次全部通过 → 建议移除标记
+            if len(recent) >= 5 and all(r == "pass" for r in recent):
+                review_items.append({
+                    "test_id": record.test_id,
+                    "current_mark": current_mark.value,
+                    "suggested_action": "remove",
+                    "reason": f"最近{len(recent)}次运行全部通过，测试已趋于稳定",
+                })
+            # 最近5次中通过率 >= 80% → 建议降级
+            elif len(recent) >= 5:
+                pass_count = sum(1 for r in recent if r == "pass")
+                if pass_count >= 4:
+                    review_items.append({
+                        "test_id": record.test_id,
+                        "current_mark": current_mark.value,
+                        "suggested_action": "downgrade",
+                        "reason": f"最近{len(recent)}次运行中{pass_count}次通过，稳定性提升",
+                    })
+                else:
+                    review_items.append({
+                        "test_id": record.test_id,
+                        "current_mark": current_mark.value,
+                        "suggested_action": "keep",
+                        "reason": f"最近{len(recent)}次运行中仅{pass_count}次通过，仍不稳定",
+                    })
+            else:
+                review_items.append({
+                    "test_id": record.test_id,
+                    "current_mark": current_mark.value,
+                    "suggested_action": "keep",
+                    "reason": f"运行次数不足5次，无法判断稳定性",
+                })
+
+        return review_items

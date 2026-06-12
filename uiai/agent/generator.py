@@ -7,7 +7,7 @@ from typing import Any
 
 from uiai.agent.base import BaseAgent, AgentOutput, AgentRole
 from uiai.agent.llm import BaseLLMClient, LLMMessage
-from uiai.agent.context import ContextManager
+from uiai.core.knowledge import KnowledgeManager
 
 logger = logging.getLogger(__name__)
 
@@ -101,9 +101,9 @@ class GeneratorAgent(BaseAgent):
     - 更完善的代码模板和规范
     """
 
-    def __init__(self, llm_client: BaseLLMClient | None = None, context_manager: ContextManager | None = None):
+    def __init__(self, llm_client: BaseLLMClient | None = None, knowledge_manager: KnowledgeManager | None = None):
         super().__init__(name="GeneratorAgent", role=AgentRole.GENERATOR, llm_client=llm_client)
-        self.context = context_manager or ContextManager()
+        self.knowledge = knowledge_manager or KnowledgeManager()
 
     async def run(self, input_data: Any, **kwargs) -> AgentOutput:
         """生成测试代码"""
@@ -114,10 +114,10 @@ class GeneratorAgent(BaseAgent):
         base_url = kwargs.get("base_url", "http://localhost:3000")
         output_dir = Path(kwargs.get("output_dir", "./generated_tests"))
 
-        # 记录用户输入
-        self.context.add_turn("user", f"请根据以下测试计划生成Python测试代码：\n\n{plan_content}")
+        # 构建知识上下文
+        knowledge_context = await self.knowledge.build_context(plan_content)
 
-        # 构建上下文消息
+        # 构建用户查询
         user_query = f"""请将以下测试计划转为可执行的Python测试代码：
 
 目标应用URL: {base_url}
@@ -127,21 +127,15 @@ class GeneratorAgent(BaseAgent):
 
 请生成完整的、可直接运行的测试代码。优先使用Page Object模式。"""
 
-        messages_list = self.context.build_context_messages(
-            system_prompt=GENERATOR_SYSTEM_PROMPT,
-            user_query=user_query,
-            include_history=True,
-            include_rag=True,
-        )
-
-        messages = [LLMMessage(role=m["role"], content=m["content"]) for m in messages_list]
+        # 组装消息
+        messages = [LLMMessage(role="system", content=GENERATOR_SYSTEM_PROMPT)]
+        if knowledge_context:
+            messages.append(LLMMessage(role="system", content=knowledge_context))
+        messages.append(LLMMessage(role="user", content=user_query))
 
         try:
             code_content = await self.llm_client.chat(messages)
             code = self._extract_code(code_content)
-
-            # 记录AI输出
-            self.context.add_turn("assistant", code)
 
             # 保存测试代码
             output_dir.mkdir(parents=True, exist_ok=True)

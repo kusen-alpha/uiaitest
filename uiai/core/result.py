@@ -45,6 +45,17 @@ class TestResult:
     video_path: str | None = None
     healing_records: list[dict[str, Any]] = field(default_factory=list)
     timestamp: datetime = field(default_factory=datetime.now)
+    assertions: list[dict] = field(default_factory=list)       # 断言结果列表
+    llm_calls: int = 0                                         # LLM调用次数
+    token_usage: dict = field(default_factory=dict)            # Token消耗统计 {prompt, completion, total}
+    cache_hits: int = 0                                        # 缓存命中次数
+    heal_attempts: list[dict] = field(default_factory=list)    # 自愈尝试记录
+    extracted_data: dict | None = None                         # 从页面提取的结构化数据
+
+    @property
+    def token_total(self) -> int:
+        """Token消耗总计"""
+        return sum(self.token_usage.values())
 
     @property
     def passed(self) -> bool:

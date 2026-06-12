@@ -16,6 +16,8 @@ class AgentRole(Enum):
     HEALER = "healer"
     EXPLORER = "explorer"
     EXECUTOR = "executor"
+    JUDGE = "judge"
+    RECORDER = "recorder"
 
 
 class AgentState(Enum):

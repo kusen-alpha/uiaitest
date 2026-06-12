@@ -4,6 +4,7 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
+import subprocess
 from typing import Optional
 
 import click
@@ -53,8 +54,10 @@ def main(ctx, verbose: bool, config_path: str | None):
 @click.option("--headed", is_flag=True, help="有头模式")
 @click.option("--output", default="./reports", help="报告输出目录")
 @click.option("--healing/--no-healing", default=True, help="是否启用自愈")
+@click.option("--mode", type=click.Choice(["script", "agent", "local_dev"]), default="script", help="运行模式")
+@click.option("--record/--no-record", default=False, help="录制为代码")
 @click.pass_context
-def run(ctx, url: str, browser: str, headed: bool, output: str, healing: bool):
+def run(ctx, url: str, browser: str, headed: bool, output: str, healing: bool, mode: str, record: bool):
     """运行测试用例"""
     config: UIAIConfig = ctx.obj["config"]
     config.browser.browser_type = browser
@@ -431,6 +434,200 @@ def info():
     table.add_row("报告格式", "JSON / HTML / Allure / Console / 趋势")
 
     console.print(table)
+
+
+@main.command()
+@click.argument('recording_file')
+@click.option('--headless/--headed', default=True)
+@click.pass_context
+def replay(ctx, recording_file, headless):
+    """回放录制的测试"""
+    config: UIAIConfig = ctx.obj["config"]
+    recording_path = Path(recording_file)
+
+    if not recording_path.exists():
+        console.print(f"[bold red]录制文件不存在: {recording_file}[/bold red]")
+        sys.exit(1)
+
+    console.print(Panel(f"[bold blue]回放录制[/bold blue]\n文件: {recording_file}"))
+
+    import json
+    from uiai.executor.playwright_executor import PlaywrightExecutor
+
+    recording_data = json.loads(recording_path.read_text(encoding="utf-8"))
+    executor = PlaywrightExecutor(config)
+
+    async def _replay():
+        return await executor.replay(recording_data, headless=headless)
+
+    result = asyncio.run(_replay())
+
+    if result.success:
+        console.print(f"[bold green]回放完成[/bold green]")
+    else:
+        console.print(f"[bold red]回放失败: {result.message}[/bold red]")
+
+
+@main.group()
+def cache():
+    """缓存管理"""
+    pass
+
+
+@cache.command('clear')
+def cache_clear():
+    """清除所有缓存"""
+    from uiai.cache.manager import CacheManager
+    manager = CacheManager()
+    manager.clear_all()
+    console.print("[bold green]缓存已清除[/bold green]")
+
+
+@cache.command('stats')
+def cache_stats():
+    """查看缓存统计"""
+    from uiai.cache.manager import CacheManager
+    manager = CacheManager()
+    stats = manager.stats()
+
+    table = Table(title="缓存统计")
+    table.add_column("指标", style="cyan")
+    table.add_column("值", style="green")
+    for key, value in stats.items():
+        table.add_row(str(key), str(value))
+    console.print(table)
+
+
+@main.group()
+def knowledge():
+    """知识库管理"""
+    pass
+
+
+@knowledge.command('show')
+@click.option('--level', type=click.Choice(['requirement', 'product', 'experience']))
+@click.option('--domain')
+def knowledge_show(level, domain):
+    """查看知识条目"""
+    from uiai.knowledge.manager import KnowledgeManager
+    manager = KnowledgeManager()
+    results = manager.search(level=level, domain=domain)
+
+    if not results:
+        console.print("[yellow]未找到匹配的知识条目[/yellow]")
+        return
+
+    table = Table(title="知识条目")
+    table.add_column("ID", style="cyan")
+    table.add_column("级别", style="yellow")
+    table.add_column("领域", style="magenta")
+    table.add_column("标题", style="green")
+    for entry in results:
+        table.add_row(str(entry.id), entry.level, entry.domain, entry.title)
+    console.print(table)
+
+
+@knowledge.command('add')
+@click.option('--level', required=True, type=click.Choice(['requirement', 'product', 'experience']))
+@click.option('--domain', required=True)
+@click.option('--title', required=True)
+@click.option('--content', required=True)
+def knowledge_add(level, domain, title, content):
+    """添加知识条目"""
+    from uiai.knowledge.manager import KnowledgeManager
+    manager = KnowledgeManager()
+
+    if level == 'requirement':
+        manager.add_requirement(domain=domain, title=title, content=content)
+    elif level == 'product':
+        manager.add_product(domain=domain, title=title, content=content)
+    elif level == 'experience':
+        manager.add_experience(domain=domain, title=title, content=content)
+
+    console.print(f"[bold green]知识条目已添加[/bold green] (级别: {level}, 领域: {domain})")
+
+
+@main.command('skill')
+def skill_list():
+    """列出可用技能"""
+    from uiai.skill.registry import SkillRegistry
+    registry = SkillRegistry()
+    skills = registry.list_skills()
+
+    if not skills:
+        console.print("[yellow]没有可用的技能[/yellow]")
+        return
+
+    table = Table(title="可用技能")
+    table.add_column("名称", style="cyan")
+    table.add_column("描述", style="green")
+    table.add_column("状态", style="yellow")
+    for s in skills:
+        table.add_row(s.name, s.description, s.status)
+    console.print(table)
+
+
+@main.command()
+@click.argument('trace_dir')
+def trace(trace_dir):
+    """查看Playwright Trace"""
+    trace_path = Path(trace_dir)
+    if not trace_path.exists():
+        console.print(f"[bold red]Trace目录不存在: {trace_dir}[/bold red]")
+        sys.exit(1)
+
+    console.print(f"[bold cyan]启动Playwright Trace查看器: {trace_dir}[/bold cyan]")
+    subprocess.run(["npx", "playwright", "show-trace", trace_dir], check=False)
+
+
+@main.group()
+def plugin():
+    """插件管理"""
+    pass
+
+
+@plugin.command('list')
+def plugin_list():
+    """列出已安装插件"""
+    from uiai.plugin.manager import PluginManager
+    manager = PluginManager()
+    plugins = manager.list_plugins()
+
+    if not plugins:
+        console.print("[yellow]没有已安装的插件[/yellow]")
+        return
+
+    table = Table(title="已安装插件")
+    table.add_column("名称", style="cyan")
+    table.add_column("版本", style="green")
+    table.add_column("状态", style="yellow")
+    for p in plugins:
+        table.add_row(p.name, p.version, p.status)
+    console.print(table)
+
+
+@plugin.command('enable')
+@click.argument('plugin_name')
+def plugin_enable(plugin_name):
+    """启用插件"""
+    from uiai.plugin.manager import PluginManager
+    manager = PluginManager()
+    if manager.enable(plugin_name):
+        console.print(f"[bold green]插件已启用: {plugin_name}[/bold green]")
+    else:
+        console.print(f"[bold red]插件启用失败: {plugin_name}[/bold red]")
+
+
+@plugin.command('disable')
+@click.argument('plugin_name')
+def plugin_disable(plugin_name):
+    """禁用插件"""
+    from uiai.plugin.manager import PluginManager
+    manager = PluginManager()
+    if manager.disable(plugin_name):
+        console.print(f"[bold yellow]插件已禁用: {plugin_name}[/bold yellow]")
+    else:
+        console.print(f"[bold red]插件禁用失败: {plugin_name}[/bold red]")
 
 
 if __name__ == "__main__":

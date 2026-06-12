@@ -8,7 +8,7 @@ from typing import Any
 
 from uiai.agent.base import BaseAgent, AgentOutput, AgentRole
 from uiai.agent.llm import BaseLLMClient, LLMMessage
-from uiai.agent.context import ContextManager
+from uiai.core.knowledge import KnowledgeManager
 from uiai.executor.base import BaseExecutor
 from uiai.core.locator import Locator
 
@@ -78,10 +78,10 @@ class ExplorerAgent(BaseAgent):
     """
 
     def __init__(self, llm_client: BaseLLMClient | None = None, executor: BaseExecutor | None = None,
-                 context_manager: ContextManager | None = None):
+                 knowledge_manager: KnowledgeManager | None = None):
         super().__init__(name="ExplorerAgent", role=AgentRole.EXPLORER, llm_client=llm_client)
         self.executor = executor
-        self.context = context_manager or ContextManager()
+        self.knowledge = knowledge_manager or KnowledgeManager()
         self._visited_urls: set[str] = set()
         self._steps: list[ExplorationStep] = []
         self._anomalies: list[ExplorationAnomaly] = []
@@ -139,10 +139,8 @@ class ExplorerAgent(BaseAgent):
                 a11y_tree = await self.executor.get_accessibility_tree()
                 screenshot = await self.executor.screenshot()
 
-                # 让AI分析页面并建议下一步操作
-                from uiai.visual.snapshot import AccessibilitySnapshot
-                snapshot = AccessibilitySnapshot(a11y_tree)
-                snapshot_text = snapshot.to_text()[:3000]  # 截断
+                # 将 a11y_tree 格式化为文本
+                snapshot_text = self._format_a11y_tree(a11y_tree)[:3000]  # 截断
 
                 prompt = f"""分析以下页面，建议接下来应该探索哪些元素。
 
@@ -162,7 +160,7 @@ class ExplorerAgent(BaseAgent):
                     analysis = await self.llm_client.chat(messages)
 
                 # 解析AI建议并执行（简化实现）
-                interactive_elements = snapshot.find_interactive_elements()
+                interactive_elements = self._find_interactive_elements(a11y_tree)
                 for elem in interactive_elements[:3]:
                     if len(self._visited_urls) >= max_pages:
                         break
@@ -191,9 +189,7 @@ class ExplorerAgent(BaseAgent):
         """基础探索"""
         try:
             a11y_tree = await self.executor.get_accessibility_tree()
-            from uiai.visual.snapshot import AccessibilitySnapshot
-            snapshot = AccessibilitySnapshot(a11y_tree)
-            elements = snapshot.find_interactive_elements()
+            elements = self._find_interactive_elements(a11y_tree)
 
             for elem in elements[:max_pages]:
                 name = elem.get("name", "")
@@ -266,3 +262,37 @@ class ExplorerAgent(BaseAgent):
                 for a in self._anomalies
             ],
         }
+
+    @staticmethod
+    def _format_a11y_tree(a11y_tree: Any) -> str:
+        """将 a11y_tree 格式化为可读文本"""
+        import json
+        if isinstance(a11y_tree, str):
+            return a11y_tree
+        return json.dumps(a11y_tree, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def _find_interactive_elements(a11y_tree: Any) -> list[dict]:
+        """从 a11y_tree 中提取可交互元素
+
+        递归遍历 a11y_tree，筛选 role 为 button/link/textbox/combobox/checkbox 的元素。
+        """
+        interactive_roles = {"button", "link", "textbox", "combobox", "checkbox"}
+        results: list[dict] = []
+
+        def _walk(node: Any) -> None:
+            if isinstance(node, dict):
+                role = node.get("role", "")
+                if role in interactive_roles:
+                    results.append({
+                        "name": node.get("name", ""),
+                        "role": role,
+                    })
+                for child in node.get("children", []):
+                    _walk(child)
+            elif isinstance(node, list):
+                for item in node:
+                    _walk(item)
+
+        _walk(a11y_tree)
+        return results
